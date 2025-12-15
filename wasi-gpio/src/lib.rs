@@ -1,5 +1,4 @@
 use wasmtime::component::Linker;
-use wasmtime::component::bindgen;
 
 pub mod analog;
 pub mod ctx;
@@ -19,15 +18,20 @@ wasmtime::component::bindgen!({
     path: "../wit",
     world: "rpi",
     with: {
-        "wasi:gpio/digital/digital-out-pin": crate::DigitalOutPin,
-        "wasi:gpio/digital/digital-in-pin": crate::DigitalInPin,
-        "wasi:gpio/digital/digital-in-out-pin": crate::DigitalInOutPin,
-        "wasi:gpio/digital/stateful-digital-out-pin": crate::StatefulDigitalOutPin,
-        "wasi:gpio/analog/analog-in-pin": crate::AnalogInPin,
-        "wasi:gpio/analog/analog-out-pin": crate::AnalogOutPin,
-        "wasi:gpio/analog/analog-in-out-pin": crate::AnalogInOutPin,
-        "wasi:gpio/poll/pollable": crate::Pollable,
-        "wasi:gpio/delay/delay": crate::Delay
+        // Digital module resources
+        "wasi:gpio/digital.digital-out-pin": crate::digital::DigitalOutPin,
+        "wasi:gpio/digital.digital-in-pin": crate::digital::DigitalInPin,
+        "wasi:gpio/digital.digital-in-out-pin": crate::digital::DigitalInOutPin,
+        "wasi:gpio/digital.stateful-digital-out-pin": crate::digital::StatefulDigitalOutPin,
+
+        // Analog module resources
+        "wasi:gpio/analog.analog-in-pin": crate::analog::AnalogInPin,
+        "wasi:gpio/analog.analog-out-pin": crate::analog::AnalogOutPin,
+        "wasi:gpio/analog.analog-in-out-pin": crate::analog::AnalogInOutPin,
+
+        // Poll and Delay resources
+        "wasi:gpio/poll.pollable": crate::poll::Pollable,
+        "wasi:gpio/delay.delay": crate::delay::Delay
     }
 });
 

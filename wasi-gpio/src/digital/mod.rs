@@ -15,12 +15,12 @@ pub struct DigitalConfigBuilder {
 
 impl<'a, T: WasiGpioView> digital::Host for GpioImpl<'a, T> {}
 
+#[derive(Clone)]
 pub struct DigitalInPin {
     pub pin: util::Shared<rppal::gpio::InputPin>,
     pub config: digital::DigitalConfig,
 }
 
-// Helper to resolve generic pins based on policy
 fn get_pin(
     ctx: &crate::ctx::WasiGpioCtx,
     label: &str,
@@ -116,6 +116,7 @@ impl<'a, T: WasiGpioView> digital::HostDigitalInPin for GpioImpl<'a, T> {
         Ok(self.read(self_)? == digital::PinState::Inactive)
     }
 
+    // FIX 2: Refactor watch_state to clone the pin and drop the borrow
     fn watch_state(
         &mut self,
         self_: Resource<DigitalInPin>,
@@ -124,20 +125,23 @@ impl<'a, T: WasiGpioView> digital::HostDigitalInPin for GpioImpl<'a, T> {
         let pin = self
             .table()
             .get(&self_)
-            .map_err(|_| general::GpioError::ResourceInvalidated)?;
+            .map_err(|_| general::GpioError::ResourceInvalidated)?
+            .clone(); // Clone the pin structure (Arc + config)
 
         let watch_type = match state {
             digital::PinState::Active => watch_event::WatchType::High,
             digital::PinState::Inactive => watch_event::WatchType::Low,
         };
 
-        let watch_type = match &pin.get_config().active_level {
+        // Use the cloned config
+        let watch_type = match &pin.config.active_level {
             general::ActiveLevel::ActiveHigh => watch_type,
             general::ActiveLevel::ActiveLow => !watch_type,
         };
 
-        // Access the watcher from the context
-        let trigger = self.ctx().watcher.watch_event(pin, watch_type);
+        // Now we can borrow self.ctx() mutably because `pin` is owned locally,
+        // not referencing the table inside `self`.
+        let trigger = self.ctx().watcher.watch_event(&pin, watch_type);
 
         self.table()
             .push(poll::Pollable::new(trigger))
@@ -158,6 +162,7 @@ impl<'a, T: WasiGpioView> digital::HostDigitalInPin for GpioImpl<'a, T> {
         self.watch_state(self_, digital::PinState::Inactive)
     }
 
+    // FIX 3: Refactor watch_falling_edge similarly
     fn watch_falling_edge(
         &mut self,
         self_: Resource<DigitalInPin>,
@@ -165,20 +170,22 @@ impl<'a, T: WasiGpioView> digital::HostDigitalInPin for GpioImpl<'a, T> {
         let pin = self
             .table()
             .get(&self_)
-            .map_err(|_| general::GpioError::ResourceInvalidated)?;
+            .map_err(|_| general::GpioError::ResourceInvalidated)?
+            .clone();
 
-        let watch_event = match &pin.get_config().active_level {
+        let watch_event = match &pin.config.active_level {
             general::ActiveLevel::ActiveHigh => watch_event::WatchType::Falling,
             general::ActiveLevel::ActiveLow => watch_event::WatchType::Rising,
         };
 
-        let trigger = self.ctx().watcher.watch_event(pin, watch_event);
+        let trigger = self.ctx().watcher.watch_event(&pin, watch_event);
 
         self.table()
             .push(poll::Pollable::new(trigger))
             .map_err(|err| general::GpioError::Other(err.to_string()))
     }
 
+    // FIX 4: Refactor watch_rising_edge similarly
     fn watch_rising_edge(
         &mut self,
         self_: Resource<DigitalInPin>,
@@ -186,14 +193,15 @@ impl<'a, T: WasiGpioView> digital::HostDigitalInPin for GpioImpl<'a, T> {
         let pin = self
             .table()
             .get(&self_)
-            .map_err(|_| general::GpioError::ResourceInvalidated)?;
+            .map_err(|_| general::GpioError::ResourceInvalidated)?
+            .clone();
 
-        let watch_event = match &pin.get_config().active_level {
+        let watch_event = match &pin.config.active_level {
             general::ActiveLevel::ActiveHigh => watch_event::WatchType::Rising,
             general::ActiveLevel::ActiveLow => watch_event::WatchType::Falling,
         };
 
-        let trigger = self.ctx().watcher.watch_event(pin, watch_event);
+        let trigger = self.ctx().watcher.watch_event(&pin, watch_event);
 
         self.table()
             .push(poll::Pollable::new(trigger))

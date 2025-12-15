@@ -10,8 +10,7 @@ rppal = "0.22.1"
 serde = "1.0.219"
 serde_derive = "1.0.219"
 toml = "0.8.22"
-wasmtime = "32.0.0"
-wasmtime-wasi = "32.0.0"
+# Update these to match wasi-gpio
+wasmtime = "39.0.0"
+wasmtime-wasi = "39.0.0"
 wasi-gpio = { path = "../wasi-gpio" }
-
-

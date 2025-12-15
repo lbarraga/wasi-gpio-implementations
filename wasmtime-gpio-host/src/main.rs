@@ -4,10 +4,10 @@ use wasmtime::{
     Config, Engine, Store,
     component::{Component, Linker},
 };
-use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::{
+    ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView, p2::add_to_linker_sync,
+};
 
-// We reuse the Config struct from your library for argument parsing,
-// or you could define a new one here if you want different CLI args.
 use wasi_gpio::policies::Config as HostConfig;
 
 struct HostState {
@@ -25,23 +25,24 @@ impl WasiView for HostState {
     }
 }
 
-// Implement the view trait from your library to give it access to the GPIO context
+// Implement the view trait from your library
 impl WasiGpioView for HostState {
     fn gpio_ctx(&mut self) -> &mut WasiGpioCtx {
         &mut self.gpio_ctx
     }
 
-    // The library needs access to the resource table as well
+    // Since your trait in ctx.rs requires table() as well, we implement it here.
+    // (It forwards to the same field as WasiView::table)
     fn table(&mut self) -> &mut ResourceTable {
         &mut self.table
     }
 }
 
 fn main() -> anyhow::Result<()> {
-    // 1. Parse CLI arguments (policy file path, component path)
+    // 1. Parse CLI arguments
     let config = HostConfig::parse();
 
-    // 2. Load policies from the specified file
+    // 2. Load policies
     let policies = config.get_policies();
     let component_path = config.get_component_path();
 
@@ -51,13 +52,13 @@ fn main() -> anyhow::Result<()> {
     let engine = Engine::new(&wasm_config)?;
     let mut linker = Linker::new(&engine);
 
-    // 4. Add WASI standard bindings to the linker
-    wasmtime_wasi::add_to_linker_sync(&mut linker)?;
+    // 4. Add WASI standard bindings
+    add_to_linker_sync(&mut linker)?;
 
-    // 5. Add your GPIO bindings to the linker
+    // 5. Add your GPIO bindings
     wasi_gpio::add_to_linker(&mut linker)?;
 
-    // 6. Initialize the Store with our HostState
+    // 6. Initialize the Store
     let wasi = WasiCtxBuilder::new()
         .inherit_stdio()
         .inherit_network()
@@ -66,18 +67,18 @@ fn main() -> anyhow::Result<()> {
     let state = HostState {
         ctx: wasi,
         table: ResourceTable::new(),
-        // Initialize the GPIO context with the loaded policies
         gpio_ctx: WasiGpioCtx::new(policies),
     };
 
     let mut store = Store::new(&engine, state);
 
-    // 7. Load and instantiate the component
+    // 7. Load and instantiate
     let component = Component::from_file(&engine, component_path)?;
     let instance = linker.instantiate(&mut store, &component)?;
 
-    // 8. Run the 'run' export (assuming a command component)
-    let run = instance.get_typed_func::<(), ()>(&mut store, "run")?;
+    // 8. Run the 'start' export (Note: your guest.wit exports 'start', not 'run')
+    // If your guest.wit says `export start: func();`, use "start" here.
+    let run = instance.get_typed_func::<(), ()>(&mut store, "start")?;
     run.call(&mut store, ())?;
 
     Ok(())
