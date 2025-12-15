@@ -31,7 +31,6 @@ wasmtime::component::bindgen!({
 
         // Poll and Delay resources
         "wasi:gpio/poll.pollable": crate::poll::Pollable,
-        "wasi:gpio/delay.delay": crate::delay::Delay
     }
 });
 
