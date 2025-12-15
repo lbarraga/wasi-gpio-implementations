@@ -1,6 +1,6 @@
-use std::fmt::Debug;
-
 use super::util::{Shared, SharedExt};
+use crate::digital::DigitalInPin;
+use std::fmt::Debug;
 
 pub struct Watcher {
     to_watch: Shared<std::collections::HashMap<WatchEventKey, WatchEventValue>>,
@@ -13,11 +13,7 @@ impl Watcher {
         }
     }
 
-    pub fn watch_event(
-        &mut self,
-        pin: &super::digital::DigitalInPin,
-        watch_type: WatchType,
-    ) -> Shared<bool> {
+    pub fn watch_event(&mut self, pin: &DigitalInPin, watch_type: WatchType) -> Shared<bool> {
         let key = WatchEventKey {
             watch_type,
             pin_label: pin.get_config().label.clone(),

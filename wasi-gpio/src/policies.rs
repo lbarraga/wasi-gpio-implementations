@@ -1,10 +1,10 @@
 #[derive(clap::Parser, Debug)]
 pub struct Config {
     #[arg(short, long)]
-    policy_file: String,
+    pub policy_file: String,
 
     #[arg(short, long)]
-    component: String,
+    pub component: String,
 }
 
 #[derive(serde::Deserialize, Debug, PartialEq)]
@@ -21,24 +21,25 @@ pub enum Mode {
 
 #[derive(serde::Deserialize, Debug)]
 pub struct WasiGpioEntry {
-    vlabel: String,
-    modes: Vec<Mode>,
-    plabel: String,
+    pub vlabel: String,
+    pub modes: Vec<Mode>,
+    pub plabel: String,
 }
 
 #[derive(serde::Deserialize, Debug)]
 pub struct Wasi {
-    gpio: Vec<WasiGpioEntry>,
+    pub gpio: Vec<WasiGpioEntry>,
 }
 
 #[derive(serde::Deserialize, Debug)]
 pub struct Policies {
-    wasi: Wasi,
+    pub wasi: Wasi,
 }
 
 impl Config {
     pub fn get_policies(&self) -> Policies {
-        let entries = std::fs::read_to_string(&self.policy_file).unwrap();
+        let entries =
+            std::fs::read_to_string(&self.policy_file).expect("Failed to read policy file");
 
         match toml::from_str(&entries) {
             Ok(e) => e,
@@ -53,7 +54,7 @@ impl Config {
 
 impl Policies {
     #[allow(dead_code)]
-    fn validate(&self) {
+    pub fn validate(&self) {
         for entry in self.wasi.gpio.iter() {
             for mode in entry.modes.iter() {
                 match mode {

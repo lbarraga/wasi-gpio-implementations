@@ -1,0 +1,17 @@
+[package]
+name = "wasi-gpio"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Versions matched to your original host implementation
+rppal = "0.22.1"
+serde = "1.0.219"
+serde_derive = "1.0.219"
+toml = "0.8.22"
+wasmtime = "39.0.0"
+wasmtime-wasi = "39.0.0"
+
+# Added for library error handling (standard in Wasmtime/WASI libs)
+anyhow = "1.0"
+clap = "4.5.53"

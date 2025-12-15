@@ -1,92 +1,84 @@
-pub mod bindings {
-    wasmtime::component::bindgen!({
-        path: "../wit",
-        world: "rpi",
-        with: {
-            "wasi:gpio/digital/digital-out-pin": crate::DigitalOutPin,
-            "wasi:gpio/digital/digital-in-pin": crate::DigitalInPin,
-            "wasi:gpio/digital/digital-in-out-pin": crate::DigitalInOutPin,
-            "wasi:gpio/digital/stateful-digital-out-pin": crate::StatefulDigitalOutPin,
-            "wasi:gpio/analog/analog-in-pin": crate::AnalogInPin,
-            "wasi:gpio/analog/analog-out-pin": crate::AnalogOutPin,
-            "wasi:gpio/analog/analog-in-out-pin": crate::AnalogInOutPin,
-            "wasi:gpio/poll/pollable": crate::Pollable,
-            "wasi:gpio/delay/delay": crate::Delay
-        }
-    });
-}
-
-mod analog;
-mod delay;
-mod digital;
-mod general;
-mod other;
-mod policies;
-mod poll;
-mod util;
-
-pub use analog::{AnalogInOutPin, AnalogInPin, AnalogOutPin};
-pub use delay::Delay;
-pub use digital::{DigitalInOutPin, DigitalInPin, DigitalOutPin, StatefulDigitalOutPin};
-pub use poll::Pollable;
-
 use clap::Parser;
-use util::Shared;
+use wasi_gpio::{WasiGpioCtx, WasiGpioView};
+use wasmtime::{
+    Config, Engine, Store,
+    component::{Component, Linker},
+};
+use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
 
-mod host_component;
-use host_component::HostComponent;
+// We reuse the Config struct from your library for argument parsing,
+// or you could define a new one here if you want different CLI args.
+use wasi_gpio::policies::Config as HostConfig;
 
-mod watch_event;
-
-struct State {
-    ctx: wasmtime_wasi::WasiCtx,
-    host: HostComponent,
+struct HostState {
+    ctx: WasiCtx,
+    table: ResourceTable,
+    gpio_ctx: WasiGpioCtx,
 }
 
-impl wasmtime_wasi::IoView for State {
-    fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
-        &mut self.host.table
+impl WasiView for HostState {
+    fn ctx(&mut self) -> WasiCtxView<'_> {
+        WasiCtxView {
+            ctx: &mut self.ctx,
+            table: &mut self.table,
+        }
     }
 }
 
-impl wasmtime_wasi::WasiView for State {
-    fn ctx(&mut self) -> &mut wasmtime_wasi::WasiCtx {
-        &mut self.ctx
+// Implement the view trait from your library to give it access to the GPIO context
+impl WasiGpioView for HostState {
+    fn gpio_ctx(&mut self) -> &mut WasiGpioCtx {
+        &mut self.gpio_ctx
+    }
+
+    // The library needs access to the resource table as well
+    fn table(&mut self) -> &mut ResourceTable {
+        &mut self.table
     }
 }
 
-fn main() {
-    let config = policies::Config::parse();
+fn main() -> anyhow::Result<()> {
+    // 1. Parse CLI arguments (policy file path, component path)
+    let config = HostConfig::parse();
 
-    //println!("{:?}", config);
+    // 2. Load policies from the specified file
     let policies = config.get_policies();
+    let component_path = config.get_component_path();
 
-    let engine = wasmtime::Engine::new(wasmtime::Config::new().wasm_component_model(true)).unwrap();
-    let component =
-        wasmtime::component::Component::from_file(&engine, config.get_component_path()).unwrap();
+    // 3. Initialize Wasmtime engine
+    let mut wasm_config = Config::new();
+    wasm_config.wasm_component_model(true);
+    let engine = Engine::new(&wasm_config)?;
+    let mut linker = Linker::new(&engine);
 
-    let mut linker = wasmtime::component::Linker::new(&engine);
+    // 4. Add WASI standard bindings to the linker
+    wasmtime_wasi::add_to_linker_sync(&mut linker)?;
 
-    bindings::wasi::gpio::general::add_to_linker(&mut linker, |state: &mut State| &mut state.host)
-        .unwrap();
-    bindings::wasi::gpio::digital::add_to_linker(&mut linker, |state: &mut State| &mut state.host)
-        .unwrap();
-    bindings::wasi::gpio::analog::add_to_linker(&mut linker, |state: &mut State| &mut state.host)
-        .unwrap();
-    bindings::wasi::gpio::delay::add_to_linker(&mut linker, |state: &mut State| &mut state.host)
-        .unwrap();
-    bindings::wasi::gpio::poll::add_to_linker(&mut linker, |state: &mut State| &mut state.host).unwrap();
+    // 5. Add your GPIO bindings to the linker
+    wasi_gpio::add_to_linker(&mut linker)?;
 
-    wasmtime_wasi::add_to_linker_sync(&mut linker).unwrap();
+    // 6. Initialize the Store with our HostState
+    let wasi = WasiCtxBuilder::new()
+        .inherit_stdio()
+        .inherit_network()
+        .build();
 
-    let state = State {
-        ctx: wasmtime_wasi::WasiCtxBuilder::new().inherit_stdio().build(),
-        host: HostComponent::new(policies, rppal::gpio::Gpio::new().unwrap()),
+    let state = HostState {
+        ctx: wasi,
+        table: ResourceTable::new(),
+        // Initialize the GPIO context with the loaded policies
+        gpio_ctx: WasiGpioCtx::new(policies),
     };
 
-    let mut store = wasmtime::Store::new(&engine, state);
+    let mut store = Store::new(&engine, state);
 
-    let instance = bindings::Rpi::instantiate(&mut store, &component, &linker).unwrap();
+    // 7. Load and instantiate the component
+    let component = Component::from_file(&engine, component_path)?;
+    let instance = linker.instantiate(&mut store, &component)?;
 
-    instance.call_start(&mut store).unwrap();
+    // 8. Run the 'run' export (assuming a command component)
+    let run = instance.get_typed_func::<(), ()>(&mut store, "run")?;
+    run.call(&mut store, ())?;
+
+    Ok(())
 }
